@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/elastic/beats/v7/libbeat/beat"
-	"github.com/elastic/beats/v7/libbeat/logp"
-	"github.com/elastic/beats/v7/libbeat/outputs"
-	"github.com/elastic/beats/v7/libbeat/outputs/codec"
-	"github.com/elastic/beats/v7/libbeat/outputs/outil"
-	"github.com/elastic/beats/v7/libbeat/publisher"
+	"github.com/elastic/beats/v9/libbeat/beat"
+	"github.com/elastic/beats/v9/libbeat/outputs"
+	"github.com/elastic/beats/v9/libbeat/outputs/codec"
+	"github.com/elastic/beats/v9/libbeat/outputs/outil"
+	"github.com/elastic/beats/v9/libbeat/publisher"
+	"github.com/elastic/elastic-agent-libs/logp"
 )
 
 type client struct {
@@ -44,7 +44,10 @@ type client struct {
 	topicSelector        outil.Selector
 	partitionKeySelector outil.Selector
 	producers            *Producers
+	logger               *logp.Logger
 }
+
+var _ outputs.NetworkClient = &client{}
 
 func newPulsarClient(
 	beat beat.Info,
@@ -55,6 +58,7 @@ func newPulsarClient(
 	topicSelector outil.Selector,
 	partitionKeySelector outil.Selector,
 ) (*client, error) {
+	logger := beat.Logger.Named("Pulsar")
 	c := &client{
 		clientOptions:        clientOptions,
 		producerOptions:      producerOptions,
@@ -63,24 +67,25 @@ func newPulsarClient(
 		config:               config,
 		topicSelector:        topicSelector,
 		partitionKeySelector: partitionKeySelector,
-		producers:            NewProducers(config.MaxCacheProducers),
+		producers:            NewProducers(logger, config.MaxCacheProducers),
+		logger:               logger,
 	}
 	return c, nil
 }
 
-func (c *client) Connect() error {
+func (c *client) Connect(_ context.Context) error {
 	var err error
 	c.pulsarClient, err = pulsar.NewClient(c.clientOptions)
-	logp.Info("start create pulsar client")
+	c.logger.Info("start create pulsar client")
 	if err != nil {
-		logp.Debug("Pulsar", "Create pulsar client failed: %v", err)
+		c.logger.Debugf("Create pulsar client failed: %v", err)
 		return err
 	}
 
-	logp.Info("start create encoder")
+	c.logger.Info("start create encoder")
 	c.codec, err = codec.CreateEncoder(c.beat, c.config.Codec)
 	if err != nil {
-		logp.Debug("Pulsar", "Create encoder failed: %v", err)
+		c.logger.Debugf("Create encoder failed: %v", err)
 		return err
 	}
 
@@ -89,7 +94,10 @@ func (c *client) Connect() error {
 
 func (c *client) Close() error {
 	c.producers.Close()
-	c.pulsarClient.Close()
+	if c.pulsarClient != nil {
+		c.pulsarClient.Close()
+	}
+	c.logger.Info("pulsar client closed")
 	return nil
 }
 
@@ -97,22 +105,22 @@ func (c *client) Publish(_ context.Context, batch publisher.Batch) error {
 	defer batch.ACK()
 	events := batch.Events()
 	c.observer.NewBatch(len(events))
-	logp.Debug("Pulsar", "Received events: %d", len(events))
+	c.logger.Debugf("Received events: %d", len(events))
 	for i := range events {
 		event := &events[i]
 		serializedEvent, err := c.codec.Encode(c.beat.Beat, &event.Content)
 		if err != nil {
-			c.observer.Dropped(1)
-			logp.Error(err)
+			c.observer.PermanentErrors(1)
+			c.logger.Error(err)
 			continue
 		}
 		buf := make([]byte, len(serializedEvent))
 		copy(buf, serializedEvent)
-		logp.Debug("Pulsar", "Success encode events: %d", i)
+		c.logger.Debugf("Success encode events: %d", i)
 		topic := selectTopic(&event.Content, c)
 		producer, err := c.producers.LoadProducer(topic, c)
 		if err != nil {
-			logp.Err("load pulsar producer{topic=%s} failed: %v", topic, err)
+			c.logger.Errorf("load pulsar producer{topic=%s} failed: %v", topic, err)
 			return err
 		}
 
@@ -124,15 +132,15 @@ func (c *client) Publish(_ context.Context, batch publisher.Batch) error {
 			Payload:   buf,
 		}, func(msgId pulsar.MessageID, prodMsg *pulsar.ProducerMessage, err error) {
 			if err != nil {
-				c.observer.Dropped(1)
-				logp.Error(err)
+				c.observer.PermanentErrors(1)
+				c.logger.Error(err)
 			} else {
-				logp.Debug("Pulsar", "Pulsar success send events: messageID: %s ", msgId)
-				c.observer.Acked(1)
+				c.logger.Debugf("Pulsar success send events: messageID: %s ", msgId)
+				c.observer.AckedEvents(1)
 			}
 		})
 	}
-	logp.Debug("Pulsar", "Success send events: %d", len(events))
+	c.logger.Debugf("Success send events: %d", len(events))
 	return nil
 }
 
@@ -143,12 +151,12 @@ func (c *client) String() string {
 func selectTopic(event *beat.Event, client *client) string {
 	topic, err := client.topicSelector.Select(event)
 	if err != nil {
-		logp.Err("select topic failed with %v", err)
+		client.logger.Errorf("select topic failed with %v", err)
 	}
 	if topic == "" {
 		topic = client.producerOptions.Topic
 	}
-	logp.Debug("Pulsar", "Selected topic: %s", topic)
+	client.logger.Debugf("Selected topic: %s", topic)
 
 	return topic
 }
@@ -156,12 +164,12 @@ func selectTopic(event *beat.Event, client *client) string {
 func selectPartitionKey(event *beat.Event, eventTime time.Time, client *client) string {
 	partitionKey, err := client.partitionKeySelector.Select(event)
 	if err != nil {
-		logp.Err("select partitionKey failed with %v", err)
+		client.logger.Errorf("select partitionKey failed with %v", err)
 	}
 	if partitionKey == "" {
 		partitionKey = fmt.Sprintf("%d", eventTime.Nanosecond())
 	}
-	logp.Debug("Pulsar", "Selected partitionKey: %s", partitionKey)
+	client.logger.Debugf("Selected partitionKey: %s", partitionKey)
 
 	return partitionKey
 }

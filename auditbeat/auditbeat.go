@@ -20,16 +20,17 @@
 package main
 
 import (
-	"github.com/elastic/beats/v7/auditbeat/cmd"
-	_ "github.com/streamnative/pulsar-beat-output/pulsar"
 	"os"
 
+	"github.com/elastic/beats/v9/auditbeat/cmd"
+	_ "github.com/streamnative/pulsar-beat-output/pulsar"
+
 	// Register modules.
-	_ "github.com/elastic/beats/v7/auditbeat/module/auditd"
-	_ "github.com/elastic/beats/v7/auditbeat/module/file_integrity"
+	_ "github.com/elastic/beats/v9/auditbeat/module/auditd"
+	_ "github.com/elastic/beats/v9/auditbeat/module/file_integrity"
 
 	// Register includes.
-	_ "github.com/elastic/beats/v7/auditbeat/include"
+	_ "github.com/elastic/beats/v9/auditbeat/include"
 )
 
 func main() {

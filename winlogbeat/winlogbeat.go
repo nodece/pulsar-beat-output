@@ -20,9 +20,10 @@
 package main
 
 import (
-	"github.com/elastic/beats/v7/winlogbeat/cmd"
-	_ "github.com/streamnative/pulsar-beat-output/pulsar"
 	"os"
+
+	"github.com/elastic/beats/v9/winlogbeat/cmd"
+	_ "github.com/streamnative/pulsar-beat-output/pulsar"
 )
 
 func main() {

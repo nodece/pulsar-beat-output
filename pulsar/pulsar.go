@@ -20,41 +20,36 @@
 package pulsar
 
 import (
-	"github.com/elastic/beats/v7/libbeat/beat"
-	"github.com/elastic/beats/v7/libbeat/common"
-	"github.com/elastic/beats/v7/libbeat/logp"
-	"github.com/elastic/beats/v7/libbeat/outputs"
-	"github.com/elastic/beats/v7/libbeat/outputs/outil"
+	"github.com/elastic/beats/v9/libbeat/beat"
+	"github.com/elastic/beats/v9/libbeat/outputs"
+	"github.com/elastic/beats/v9/libbeat/outputs/outil"
+	"github.com/elastic/elastic-agent-libs/config"
+	"github.com/elastic/elastic-agent-libs/logp"
 )
 
 func init() {
 	outputs.RegisterType("pulsar", makePulsar)
 }
 
-func makePulsar(
-	_ outputs.IndexManager,
-	beat beat.Info,
-	observer outputs.Observer,
-	cfg *common.Config,
-) (outputs.Group, error) {
+func makePulsar(__ outputs.IndexManager, beat beat.Info, observer outputs.Observer, cfg *config.C) (outputs.Group, error) {
 	config := defaultConfig()
-	logp.Info("initialize pulsar output")
+	beat.Logger.Info("initialize pulsar output")
 	if err := cfg.Unpack(&config); err != nil {
 		return outputs.Fail(err)
 	}
 
-	logp.Info("init config %v", config)
+	beat.Logger.Infof("init config %v", config)
 	clientOptions, producerOptions, err := initOptions(&config)
 	if err != nil {
 		return outputs.Fail(err)
 	}
 
-	topicSelector, err := buildTopicSelector(cfg)
+	topicSelector, err := buildTopicSelector(cfg, beat.Logger)
 	if err != nil {
 		return outputs.Fail(err)
 	}
 
-	partitionKeySelector, err := buildPartitionKeySelector(cfg)
+	partitionKeySelector, err := buildPartitionKeySelector(cfg, beat.Logger)
 	if err != nil {
 		return outputs.Fail(err)
 	}
@@ -67,21 +62,22 @@ func makePulsar(
 	if config.MaxRetries < 0 {
 		retry = -1
 	}
-	return outputs.Success(config.BulkMaxSize, retry, client)
+
+	return outputs.Success(config.Queue, config.BulkMaxSize, retry, nil, beat.Logger, client)
 }
 
-func buildTopicSelector(cfg *common.Config) (outil.Selector, error) {
+func buildTopicSelector(cfg *config.C, logger *logp.Logger) (outil.Selector, error) {
 	return outil.BuildSelectorFromConfig(cfg, outil.Settings{
 		Key:              "topic",
 		EnableSingleOnly: true,
 		FailEmpty:        true,
-	})
+	}, logger)
 }
 
-func buildPartitionKeySelector(cfg *common.Config) (outil.Selector, error) {
+func buildPartitionKeySelector(cfg *config.C, logger *logp.Logger) (outil.Selector, error) {
 	return outil.BuildSelectorFromConfig(cfg, outil.Settings{
 		Key:              "partition_key",
 		EnableSingleOnly: true,
 		FailEmpty:        false,
-	})
+	}, logger)
 }

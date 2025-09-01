@@ -24,25 +24,27 @@ import (
 	"sync"
 
 	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/elastic/beats/v7/libbeat/logp"
+	"github.com/elastic/elastic-agent-libs/logp"
 	lru "github.com/hashicorp/golang-lru/simplelru"
 )
 
 type Producers struct {
-	cache *lru.LRU
-	lock  sync.RWMutex
+	cache  *lru.LRU
+	lock   sync.RWMutex
+	logger *logp.Logger
 }
 
-func NewProducers(maxProducers int) *Producers {
+func NewProducers(logger *logp.Logger, maxProducers int) *Producers {
 	cache, err := lru.NewLRU(maxProducers, func(key interface{}, value interface{}) {
 		producer := value.(pulsar.Producer)
-		close(producer)
+		closeProducer(logger, producer)
 	})
 	if err != nil {
 		return nil
 	}
 	return &Producers{
-		cache: cache,
+		cache:  cache,
+		logger: logger,
 	}
 }
 
@@ -80,11 +82,11 @@ func (p *Producers) getOrCreateProducer(topic string, client *client) (pulsar.Pr
 	value, ok := p.cache.Get(topic)
 	if ok {
 		p.lock.Unlock()
-		logp.Info("pulsar producer already exists for topic: %s", topic)
+		client.logger.Infof("pulsar producer already exists for topic: %s", topic)
 		return value.(pulsar.Producer), nil
 	}
 
-	logp.Info("creating pulsar producer for topic: %s", topic)
+	client.logger.Infof("creating pulsar producer for topic: %s", topic)
 	newProducerOptions := pulsar.ProducerOptions{
 		Topic:                           topic,
 		Name:                            client.producerOptions.Name,
@@ -109,9 +111,9 @@ func (p *Producers) getOrCreateProducer(topic string, client *client) (pulsar.Pr
 	newProducer, err := client.pulsarClient.CreateProducer(newProducerOptions)
 	if err == nil {
 		p.cache.Add(topic, newProducer)
-		logp.Info("created pulsar producer for topic: %s", topic)
+		client.logger.Infof("created pulsar producer for topic: %s", topic)
 	} else {
-		logp.Err("creating pulsar producer{topic=%s} failed: %v", topic, err)
+		client.logger.Errorf("creating pulsar producer{topic=%s} failed: %v", topic, err)
 		if client.config.FastFail {
 			os.Exit(1)
 		}
@@ -128,20 +130,20 @@ func (p *Producers) Close() {
 	for key := range p.cache.Keys() {
 		if value, ok := p.cache.Peek(key); ok {
 			producer := value.(pulsar.Producer)
-			close(producer)
+			closeProducer(p.logger, producer)
 		}
 	}
 
 	p.lock.Unlock()
 }
 
-func close(producer pulsar.Producer) {
-	logp.Info("closing pulsar producer{topic=%s}", producer.Topic())
+func closeProducer(logger *logp.Logger, producer pulsar.Producer) {
+	logger.Infof("closing pulsar producer{topic=%s}", producer.Topic())
 	err := producer.Flush()
 	if err != nil {
-		logp.Err("flush pulsar producer{topic=%s} failed: %v", producer.Topic(), err)
+		logger.Errorf("flush pulsar producer{topic=%s} failed: %v", producer.Topic(), err)
 	}
 
 	producer.Close()
-	logp.Info("closed pulsar producer{topic=%s}", producer.Topic())
+	logger.Infof("closed pulsar producer{topic=%s}", producer.Topic())
 }
