@@ -26,25 +26,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elastic/elastic-agent-libs/config"
+	"github.com/elastic/elastic-agent-libs/mapstr"
+
 	"github.com/stretchr/testify/assert"
 
 	"github.com/apache/pulsar-client-go/pulsar"
-	"github.com/elastic/beats/v7/libbeat/beat"
-	"github.com/elastic/beats/v7/libbeat/common"
-	"github.com/elastic/beats/v7/libbeat/outputs"
-	_ "github.com/elastic/beats/v7/libbeat/outputs/codec/format"
-	_ "github.com/elastic/beats/v7/libbeat/outputs/codec/json"
-	"github.com/elastic/beats/v7/libbeat/outputs/outest"
+	"github.com/elastic/beats/v9/libbeat/beat"
+	"github.com/elastic/beats/v9/libbeat/outputs"
+	_ "github.com/elastic/beats/v9/libbeat/outputs/codec/format"
+	_ "github.com/elastic/beats/v9/libbeat/outputs/codec/json"
+	"github.com/elastic/beats/v9/libbeat/outputs/outest"
 )
 
 type eventInfo struct {
 	events []beat.Event
 }
 
-func makeConfig(t *testing.T, in map[string]interface{}) *common.Config {
-	cfg, err := common.NewConfigFrom(in)
+func makeConfig(t *testing.T, in map[string]interface{}) *config.C {
+	cfg, err := config.NewConfigFrom(in)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("fail to create config: %v", err)
 	}
 	return cfg
 }
@@ -69,7 +71,6 @@ func TestPulsarPublish(t *testing.T) {
 }
 
 func testPulsarPublishMessage(t *testing.T, cfg map[string]interface{}) {
-
 	tests := []struct {
 		title  string
 		config map[string]interface{}
@@ -94,7 +95,7 @@ func testPulsarPublishMessage(t *testing.T, cfg map[string]interface{}) {
 					events: []beat.Event{
 						{
 							Timestamp: time.Now(),
-							Fields: common.MapStr{
+							Fields: mapstr.M{
 								"topic":         "my-topic1",
 								"partition_key": "partition_1",
 								"type":          "log",
@@ -103,7 +104,7 @@ func testPulsarPublishMessage(t *testing.T, cfg map[string]interface{}) {
 						},
 						{
 							Timestamp: time.Now(),
-							Fields: common.MapStr{
+							Fields: mapstr.M{
 								"topic":         "my-topic2",
 								"partition_key": "partition_1",
 								"type":          "log",
@@ -128,7 +129,7 @@ func testPulsarPublishMessage(t *testing.T, cfg map[string]interface{}) {
 			}
 
 			output := grp.Clients[0].(*client)
-			if err := output.Connect(); err != nil {
+			if err := output.Connect(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			defer output.Close()
@@ -152,10 +153,10 @@ func testPulsarPublishMessage(t *testing.T, cfg map[string]interface{}) {
 
 func testReadFromPulsarTopic(
 	t *testing.T, clientOptions pulsar.ClientOptions,
-	topic string, nMessages int) []pulsar.Message {
+	topic string, nMessages int,
+) []pulsar.Message {
 	// Instantiate a Pulsar client
 	client, err := pulsar.NewClient(clientOptions)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +167,6 @@ func testReadFromPulsarTopic(
 		SubscriptionName: "sub-1",
 		Type:             pulsar.Shared,
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}

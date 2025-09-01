@@ -23,9 +23,11 @@ import (
 	"errors"
 	"time"
 
+	"github.com/elastic/elastic-agent-libs/config"
+
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/apache/pulsar-client-go/pulsar/log"
-	"github.com/elastic/beats/v7/libbeat/outputs/codec"
+	"github.com/elastic/beats/v9/libbeat/outputs/codec"
 	"github.com/sirupsen/logrus"
 )
 
@@ -76,6 +78,8 @@ type pulsarConfig struct {
 
 	// exit immediately if the connection to pulsar fails
 	FastFail bool `config:"fast_fail"`
+
+	Queue config.Namespace `config:"queue"`
 }
 
 func defaultConfig() pulsarConfig {
