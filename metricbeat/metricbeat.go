@@ -20,13 +20,14 @@
 package main
 
 import (
-	"github.com/elastic/beats/v7/metricbeat/cmd"
-	_ "github.com/streamnative/pulsar-beat-output/pulsar"
 	"os"
+
+	"github.com/elastic/beats/v9/metricbeat/cmd"
+	_ "github.com/streamnative/pulsar-beat-output/pulsar"
 )
 
 func main() {
-	if err := cmd.RootCmd.Execute(); err != nil {
+	if err := cmd.Initialize(cmd.MetricbeatSettings("")); err != nil {
 		os.Exit(1)
 	}
 }
